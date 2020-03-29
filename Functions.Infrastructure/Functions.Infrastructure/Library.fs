@@ -106,10 +106,10 @@ module HttpHandler =
 [<AutoOpen>]
 module Extensions =
 
-    type HttpRequestMessage 
+    type HttpRequestMessage with
         /// Tries to get the Bearer token of the Authorization header
-        with member this.TryGetBearerToken () =
-                this.Headers 
-                |> Seq.tryFind (fun q -> q.Key = "Authorization")
-                |> Option.map (fun q -> if Seq.isEmpty q.Value then String.Empty else q.Value |> Seq.head)
-                |> Option.map (fun h -> h.Substring("Bearer ".Length).Trim())
+        member this.TryGetBearerToken () =
+            this.Headers 
+            |> Seq.tryFind (fun q -> q.Key = "Authorization")
+            |> Option.map (fun q -> if Seq.isEmpty q.Value then String.Empty else q.Value |> Seq.head)
+            |> Option.map (fun h -> h.Substring("Bearer ".Length).Trim())
