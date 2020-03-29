@@ -107,9 +107,24 @@ module HttpHandler =
 module Extensions =
 
     type HttpRequestMessage with
+
         /// Tries to get the Bearer token of the Authorization header
         member this.TryGetBearerToken () =
             this.Headers 
             |> Seq.tryFind (fun q -> q.Key = "Authorization")
             |> Option.map (fun q -> if Seq.isEmpty q.Value then String.Empty else q.Value |> Seq.head)
             |> Option.map (fun h -> h.Substring("Bearer ".Length).Trim())
+
+        /// Tries to get a query string value by name
+        member this.TryGetQueryStringValue (name : string) =
+            let value = this.RequestUri.ParseQueryString().Get(name)
+            if String.IsNullOrWhiteSpace(value)
+            then None
+            else Some value
+
+        /// Tries to get a header value by name
+        member this.TryGetHeaderValue (name : string) =
+            let hasHeader, values = this.Headers.TryGetValues(name)
+            if hasHeader
+            then values |> Seq.tryHead
+            else None

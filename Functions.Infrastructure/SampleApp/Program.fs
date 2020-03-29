@@ -68,6 +68,24 @@ module Program =
                 return Some response
             }
 
+    let testRequestExtensionsHandler : HttpHandler =
+        fun context ->
+            async {
+                let queryStringValue = 
+                    context.Request.TryGetQueryStringValue "name"
+                    |> Option.defaultValue "N/A"
+
+                let headerValue =
+                    context.Request.TryGetHeaderValue "X-Test"
+                    |> Option.defaultValue "N/A"
+
+                let data = {| QueryStringValue = queryStringValue; HeaderValue = headerValue |}
+
+                let response = context.Request.CreateResponse(HttpStatusCode.OK, data)
+
+                return Some response
+            }
+
     [<FunctionName("HelloWorld")>]
     let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                                           
         HttpFunctionContext.bootstrap logger request
@@ -84,4 +102,10 @@ module Program =
     let currentUser ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =         
         HttpFunctionContext.bootstrapWithSecurity logger request getClaimsPrincipal
         |> HttpHandler.handle errorHandler currentUserHandler
-        |> Async.StartAsTask      
+        |> Async.StartAsTask   
+
+    [<FunctionName("TestRequestExtensions")>]
+    let testRequestExtensions ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =        
+        HttpFunctionContext.bootstrap logger request
+        |> HttpHandler.handle errorHandler testRequestExtensionsHandler
+        |> Async.StartAsTask    
