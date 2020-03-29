@@ -1,0 +1,6 @@
+**/obj
+**/bin
+**/.ionide
+**/.fake
+**/.vs
+**/local.settings.json
