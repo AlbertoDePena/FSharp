@@ -1,0 +1,6 @@
+**/local.settings.json
+**/bin
+**/obj
+**/.sln
+**/.gitignore
+**/.md
