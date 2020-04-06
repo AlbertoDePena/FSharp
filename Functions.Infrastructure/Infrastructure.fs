@@ -6,12 +6,12 @@ open System.Net.Http
 open System.Security.Claims
 open Microsoft.Extensions.Logging
 
+type GetClaimsPrincipal = ILogger -> HttpRequestMessage -> Async<ClaimsPrincipal option>
+
 type HttpFunctionContext = {
     Logger : ILogger
     Request : HttpRequestMessage
-    GetClaimsPrincipal : ILogger -> HttpRequestMessage -> Async<ClaimsPrincipal option> } 
-
-type GetClaimsPrincipal = ILogger -> HttpRequestMessage -> Async<ClaimsPrincipal option>
+    GetClaimsPrincipal : GetClaimsPrincipal }
 
 type HttpHandler = HttpFunctionContext -> Async<HttpResponseMessage option>
 
