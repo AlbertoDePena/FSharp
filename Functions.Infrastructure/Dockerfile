@@ -1,8 +1,7 @@
 FROM mcr.microsoft.com/dotnet/core/sdk:3.1 AS installer-env
 
-COPY ./Functions.Infrastructure /src/Functions.Infrastructure
-COPY ./SampleApp /src/SampleApp
-RUN cd /src/SampleApp && \
+COPY ./ /src
+RUN cd /src && \
     mkdir -p /home/site/wwwroot && \
     dotnet publish *.fsproj --configuration Release --output /home/site/wwwroot
 

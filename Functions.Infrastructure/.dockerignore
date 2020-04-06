@@ -1,6 +1,4 @@
-**/local.settings.json
-**/bin
-**/obj
-**/.sln
-**/.gitignore
-**/.md
+local.settings.json
+bin
+obj
+.ionide

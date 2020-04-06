@@ -5,3 +5,5 @@
 **/.vs
 **/local.settings.json
 **/home/site/wwwroot
+.fake
+.ionide

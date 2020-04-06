@@ -5,6 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Extensions.fs" />
+    <Compile Include="Infrastructure.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   
@@ -21,9 +23,5 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Functions.Infrastructure\Functions.Infrastructure.fsproj" />
   </ItemGroup>
 </Project>
