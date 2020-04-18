@@ -21,7 +21,6 @@ module Program =
                 request.TryGetBearerToken ()
                 |> Option.defaultWith (fun _ -> invalidOp "Bearer token is required")
 
-            //TODO: validate bearerToken
             logger.LogInformation(sprintf "Bearer Token: %s" bearerToken)
 
             let claims = [Claim(ClaimTypes.Name, "Test User")]                
@@ -29,14 +28,12 @@ module Program =
 
             identity |> ClaimsPrincipal |> Some |> Async.singleton
 
-    let helloWorldHandler : HttpMiddleware =
-        let invoke : HttpRequestInvoker =
-            fun _ context ->
+    let helloWorldHandler : HttpHandler =
+        handleContext (
+            fun context ->
                 context.Logger.LogInformation("Handling HelloWorld request...")
                 let response = context.Request.CreateResponse(HttpStatusCode.OK, "Hello World!") |> Some
-                { context with Response = response } |> Async.singleton
-
-        { Next = None; Invoke = invoke }
+                { context with Response = response } |> Some |> Async.singleton)
 
     // let helloLazHandler : HttpHandler =
     //     fun context -> 
@@ -76,11 +73,11 @@ module Program =
     //         context.Request.CreateResponse(HttpStatusCode.OK, data)
     //         |> Some |> Async.singleton
 
-    [<FunctionName("HelloWorld")>]
-    let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                                           
-        bootstrapHttpContext logger request
-        |> handleHttpRequest [helloWorldHandler]
-        |> Async.StartAsTask
+    // [<FunctionName("HelloWorld")>]
+    // let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                                           
+    //     bootstrapHttpContext logger request
+    //     |> handleHttpRequest [Middlewares.cors; Middlewares.security getClaimsPrincipal; helloWorldHandler]
+    //     |> Async.StartAsTask
 
     // [<FunctionName("HelloLaz")>]
     // let helloLaz ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =        
@@ -99,3 +96,10 @@ module Program =
     //     HttpFunctionContext.bootstrap logger request
     //     |> HttpHandler.handle testRequestExtensionsHandler
     //     |> Async.StartAsTask    
+
+    [<FunctionName("HelloWorld")>]
+    let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =  
+        let handler = cors >=> security getClaimsPrincipal >=> helloWorldHandler     
+
+        handleRequest handler logger request 
+        |> Async.StartAsTask
