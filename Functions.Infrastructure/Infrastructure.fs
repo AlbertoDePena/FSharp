@@ -20,7 +20,7 @@ type HttpFunc = HttpFunctionContext -> HttpFuncResult
 
 type HttpHandler = HttpFunc -> HttpFunc
 
-type ErrorHandler = exn -> ILogger -> HttpHandler
+type ErrorHandler = exn -> HttpFunctionContext -> HttpResponseMessage
 
 [<AutoOpen>]
 module Core =
@@ -30,6 +30,11 @@ module Core =
         Request = request
         Response = None
         ClaimsPrincipal = None }
+
+    let private defaultErrorHandler : ErrorHandler =
+        fun ex context ->
+            context.Logger.LogError(ex, ex.Message)
+            context.Request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
 
     let handleContext (contextMap : HttpFunctionContext -> HttpFuncResult) : HttpHandler =
         fun (next : HttpFunc) (context : HttpFunctionContext) ->
@@ -52,18 +57,24 @@ module Core =
 
     let (>=>) = compose
 
-    let handleRequest (handler : HttpHandler) (logger : ILogger) (request : HttpRequestMessage) =
+    let handleRequestWith (errorHandler : ErrorHandler) (handler : HttpHandler) (logger : ILogger) (request : HttpRequestMessage) =
         async {
-            let func : HttpFunc = handler (Some >> Async.singleton)
             let context = bootstrapContext logger request
-            let! result = func context
-            match result with
-            | None -> return failwith "HTTP function context not available"
-            | Some ctx ->
-                match ctx.Response with
-                | None -> return failwith "HTTP handler did not yield a response"
-                | Some response -> return response 
+            try
+                let func : HttpFunc = handler (Some >> Async.singleton)                
+                let! result = func context
+                match result with
+                | None -> return failwith "HTTP function context not available"
+                | Some ctx ->
+                    match ctx.Response with
+                    | None -> return failwith "HTTP handler did not yield a response"
+                    | Some response -> return response 
+            with 
+            | ex -> return errorHandler ex context
         }
+
+    let handleRequest handler logger request =
+        handleRequestWith defaultErrorHandler handler logger request
 
 [<AutoOpen>]        
 module HttpHandlers =
