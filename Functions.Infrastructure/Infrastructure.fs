@@ -13,6 +13,7 @@ type HttpFunctionContext = {
     Request : HttpRequestMessage
     Response : HttpResponseMessage option
     ClaimsPrincipal : ClaimsPrincipal option }
+    with member this.ToFuncResult response = Some { this with Response = Some response }
 
 type HttpFuncResult = Async<HttpFunctionContext option>
 
@@ -20,7 +21,7 @@ type HttpFunc = HttpFunctionContext -> HttpFuncResult
 
 type HttpHandler = HttpFunc -> HttpFunc
 
-type ErrorHandler = exn -> HttpFunctionContext -> HttpResponseMessage
+type ErrorHandler = ILogger -> HttpRequestMessage -> exn -> HttpResponseMessage
 
 [<AutoOpen>]
 module Core =
@@ -32,9 +33,9 @@ module Core =
         ClaimsPrincipal = None }
 
     let private defaultErrorHandler : ErrorHandler =
-        fun ex context ->
-            context.Logger.LogError(ex, ex.Message)
-            context.Request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
+        fun logger request ex ->
+            logger.LogError(ex, ex.Message)
+            request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
 
     let handleContext (contextMap : HttpFunctionContext -> HttpFuncResult) : HttpHandler =
         fun (next : HttpFunc) (context : HttpFunctionContext) ->
@@ -57,6 +58,7 @@ module Core =
 
     let (>=>) = compose
 
+    /// Handle HTTP request with a custom error handler.
     let handleRequestWith (errorHandler : ErrorHandler) (handler : HttpHandler) (logger : ILogger) (request : HttpRequestMessage) =
         async {
             let context = bootstrapContext logger request
@@ -70,9 +72,10 @@ module Core =
                     | None -> return failwith "HTTP handler did not yield a response"
                     | Some response -> return response 
             with 
-            | ex -> return errorHandler ex context
+            | ex -> return errorHandler context.Logger context.Request ex
         }
 
+    /// Handle HTTP request.
     let handleRequest handler logger request =
         handleRequestWith defaultErrorHandler handler logger request
 
@@ -93,6 +96,9 @@ module HttpHandlers =
     let private enrichWithCorsOrigin (response : HttpResponseMessage) =
         response.Headers.Add("Access-Control-Allow-Origin", "*"); response
 
+    /// Handle HTTP OPTIONS request by setting all CORS headers.
+    /// 
+    /// When HTTP request is not OPTIONS, enrich response with CORS origin.
     let cors : HttpHandler =
         fun next context ->
             async {
@@ -103,6 +109,7 @@ module HttpHandlers =
                     return context |> Option.map (fun context -> { context with Response = context.Response |> Option.map enrichWithCorsOrigin })
             }
 
+    /// Set HTTP function context's claims principal.
     let security (getClaimsPrincipal : GetClaimsPrincipal) : HttpHandler =
         fun next context ->
             async {
