@@ -103,7 +103,7 @@ module HttpHandlers =
         fun next context ->
             async {
                 match handleOptionsRequest context.Request with
-                | Some response -> return { context with Response = Some response } |> Some
+                | Some response -> return context.ToFuncResult response
                 | None -> 
                     let! context = next context
                     return context |> Option.map (fun context -> { context with Response = context.Response |> Option.map enrichWithCorsOrigin })

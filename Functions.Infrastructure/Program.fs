@@ -13,7 +13,7 @@ module Program =
     let errorHandler : ErrorHandler =
         fun logger request ex ->
             logger.LogError(ex, ex.Message)
-            request.CreateErrorResponse(HttpStatusCode.BadRequest, "Testing custome error handler")
+            request.CreateErrorResponse(HttpStatusCode.BadRequest, "Testing custom error handler")
 
     let getClaimsPrincipal : GetClaimsPrincipal =
         fun logger request ->
@@ -90,7 +90,7 @@ module Program =
 
     [<FunctionName("CurrentUser")>]
     let currentUser ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =         
-        let handler = security getClaimsPrincipal >=> currentUserHandler
+        let handler = cors >=> security getClaimsPrincipal >=> currentUserHandler
         
         handleRequestWith errorHandler handler logger request
         |> Async.StartAsTask 
