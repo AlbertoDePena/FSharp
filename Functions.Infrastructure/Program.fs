@@ -11,9 +11,9 @@ open System.Security.Claims
 module Program =
 
     let errorHandler : ErrorHandler =
-        fun context ex ->
-            context.Logger.LogError(ex.Message)
-            context.Request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
+        fun logger request ex ->
+            logger.LogError(ex, ex.Message)
+            request.CreateErrorResponse(HttpStatusCode.BadRequest, "Testing custom error handler")
 
     let getClaimsPrincipal : GetClaimsPrincipal =
         fun logger request ->
@@ -21,7 +21,6 @@ module Program =
                 request.TryGetBearerToken ()
                 |> Option.defaultWith (fun _ -> invalidOp "Bearer token is required")
 
-            //TODO: validate bearerToken
             logger.LogInformation(sprintf "Bearer Token: %s" bearerToken)
 
             let claims = [Claim(ClaimTypes.Name, "Test User")]                
@@ -30,69 +29,73 @@ module Program =
             identity |> ClaimsPrincipal |> Some |> Async.singleton
 
     let helloWorldHandler : HttpHandler =
-        fun context -> 
-            context.Logger.LogInformation("Handling HelloWorld request...")
-            context.Request.CreateResponse(HttpStatusCode.OK, "Hello World!")
-            |> Some |> Async.singleton
+        handleContext (
+            fun context ->
+                context.Logger.LogInformation("Handling HelloWorld request...")
+                context.Request.CreateResponse(HttpStatusCode.OK, "Hello World!")
+                |> context.WithResponse |> Async.singleton)
 
     let helloLazHandler : HttpHandler =
-        fun context -> 
-            context.Logger.LogInformation("Handling HelloLaz request...")
-            context.Request.CreateResponse(HttpStatusCode.OK, "Hello Laz!")
-            |> Some |> Async.singleton
+        handleContext (
+            fun context -> 
+                context.Logger.LogInformation("Handling HelloLaz request...")
+                context.Request.CreateResponse(HttpStatusCode.OK, "Hello Laz!")
+                |> context.WithResponse |> Async.singleton)
 
     let currentUserHandler : HttpHandler =
-        fun context -> 
-            async {
-                context.Logger.LogInformation("Handling CurrentUser request...")
+        handleContext (
+            fun context -> 
+                async {
+                    context.Logger.LogInformation("Handling CurrentUser request...")
 
-                let! claimsPrincipal = context.GetClaimsPrincipal context.Logger context.Request
+                    let user = 
+                        context.ClaimsPrincipal
+                        |> Option.map (fun principal -> principal.Identity.Name)
+                        |> Option.defaultWith (fun _ -> invalidOp "ClaimsPrincipal not available")
 
-                let user = 
-                    claimsPrincipal
-                    |> Option.map (fun principal -> principal.Identity.Name)
-                    |> Option.defaultWith (fun _ -> invalidOp "ClaimsPrincipal not available")
+                    let result = 
+                        context.Request.CreateResponse(HttpStatusCode.OK, sprintf "The current user is: %s" user)
+                        |> context.WithResponse
 
-                let response = context.Request.CreateResponse(HttpStatusCode.OK, sprintf "The current user is: %s" user)
-
-                return Some response
-            }
+                    return result
+                })
 
     let testRequestExtensionsHandler : HttpHandler =
-        fun context ->
-            let queryStringValue = 
-                context.Request.TryGetQueryStringValue "name"
-                |> Option.defaultValue "N/A"
+        handleContext (
+            fun context ->
+                let queryStringValue = 
+                    context.Request.TryGetQueryStringValue "name"
+                    |> Option.defaultValue "N/A"
 
-            let headerValue =
-                context.Request.TryGetHeaderValue "X-Test"
-                |> Option.defaultValue "N/A"
+                let headerValue =
+                    context.Request.TryGetHeaderValue "X-Test"
+                    |> Option.defaultValue "N/A"
 
-            let data = {| QueryStringValue = queryStringValue; HeaderValue = headerValue |}
+                let data = {| QueryStringValue = queryStringValue; HeaderValue = headerValue |}
 
-            context.Request.CreateResponse(HttpStatusCode.OK, data)
-            |> Some |> Async.singleton
+                context.Request.CreateResponse(HttpStatusCode.OK, data)
+                |> context.WithResponse |> Async.singleton)
 
     [<FunctionName("HelloWorld")>]
     let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                                           
-        HttpFunctionContext.bootstrap logger request
-        |> HttpHandler.handle helloWorldHandler
-        |> Async.StartAsTask
+        let handler = cors >=> helloWorldHandler
+
+        handleRequest handler logger request
+        |> Async.StartAsTask 
 
     [<FunctionName("HelloLaz")>]
-    let helloLaz ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =        
-        HttpFunctionContext.bootstrap logger request
-        |> HttpHandler.handle helloLazHandler
-        |> Async.StartAsTask    
+    let helloLaz ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                
+        handleRequest helloLazHandler logger request
+        |> Async.StartAsTask   
 
     [<FunctionName("CurrentUser")>]
     let currentUser ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =         
-        HttpFunctionContext.bootstrapWith logger request getClaimsPrincipal
-        |> HttpHandler.handleWith errorHandler currentUserHandler
-        |> Async.StartAsTask   
+        let handler = cors >=> security getClaimsPrincipal >=> currentUserHandler
+        
+        handleRequestWith errorHandler handler logger request
+        |> Async.StartAsTask 
 
     [<FunctionName("TestRequestExtensions")>]
-    let testRequestExtensions ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =        
-        HttpFunctionContext.bootstrap logger request
-        |> HttpHandler.handle testRequestExtensionsHandler
-        |> Async.StartAsTask    
+    let testRequestExtensions ([<HttpTrigger(AuthorizationLevel.Anonymous, "get")>] request : HttpRequestMessage) (logger : ILogger) =        
+        handleRequest testRequestExtensionsHandler logger request
+        |> Async.StartAsTask   

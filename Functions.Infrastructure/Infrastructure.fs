@@ -11,25 +11,76 @@ type GetClaimsPrincipal = ILogger -> HttpRequestMessage -> Async<ClaimsPrincipal
 type HttpFunctionContext = {
     Logger : ILogger
     Request : HttpRequestMessage
-    GetClaimsPrincipal : GetClaimsPrincipal }
+    Response : HttpResponseMessage option
+    ClaimsPrincipal : ClaimsPrincipal option }
+    with member this.WithResponse response = Some { this with Response = Some response }
 
-type HttpHandler = HttpFunctionContext -> Async<HttpResponseMessage option>
+type HttpFunctionResult = Async<HttpFunctionContext option>
 
-type ErrorHandler = HttpFunctionContext -> exn -> HttpResponseMessage
+type HttpFunction = HttpFunctionContext -> HttpFunctionResult
 
-[<RequireQualifiedAccess>]
-module HttpFunctionContext =
+type HttpHandler = HttpFunction -> HttpFunction
 
-    let bootstrapWith logger request getClaimsPrincipal = {
+type ErrorHandler = ILogger -> HttpRequestMessage -> exn -> HttpResponseMessage
+
+[<AutoOpen>]
+module Core =
+
+    let private bootstrapContext logger request = {
         Logger = logger
         Request = request
-        GetClaimsPrincipal = getClaimsPrincipal }
+        Response = None
+        ClaimsPrincipal = None }
 
-    let bootstrap logger request = 
-        bootstrapWith logger request (fun _ _ -> Async.singleton None)
+    let private defaultErrorHandler : ErrorHandler =
+        fun logger request ex ->
+            logger.LogError(ex, ex.Message)
+            request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
 
-[<RequireQualifiedAccess>]        
-module HttpHandler =
+    let handleContext (contextMap : HttpFunctionContext -> HttpFunctionResult) : HttpHandler =
+        fun (next : HttpFunction) (context : HttpFunctionContext) ->
+            async {
+                match! contextMap context with
+                | Some context ->
+                    match context.Response with
+                    | Some _ -> return Some context
+                    | None -> return! next context
+                | None -> return  None
+            }
+
+    let compose (handler1 : HttpHandler) (handler2 : HttpHandler) : HttpHandler =
+        fun (final : HttpFunction) ->
+            let func = final |> handler2 |> handler1
+            fun (context : HttpFunctionContext) ->
+                match context.Response with
+                | Some _ -> final context
+                | None -> func context
+
+    let (>=>) = compose
+
+    /// Handle HTTP request with a custom error handler.
+    let handleRequestWith (errorHandler : ErrorHandler) (handler : HttpHandler) (logger : ILogger) (request : HttpRequestMessage) =
+        async {
+            let context = bootstrapContext logger request
+            try
+                let func : HttpFunction = handler (Some >> Async.singleton)                
+                let! result = func context
+                match result with
+                | None -> return failwith "HTTP function context not available"
+                | Some ctx ->
+                    match ctx.Response with
+                    | None -> return failwith "HTTP handler did not yield a response"
+                    | Some response -> return response 
+            with 
+            | ex -> return errorHandler context.Logger context.Request ex
+        }
+
+    /// Handle HTTP request.
+    let handleRequest handler logger request =
+        handleRequestWith defaultErrorHandler handler logger request
+
+[<AutoOpen>]        
+module HttpHandlers =
 
     let private handleOptionsRequest (request : HttpRequestMessage) =
         if String.Equals(request.Method.Method, "OPTIONS", StringComparison.OrdinalIgnoreCase) then
@@ -45,28 +96,24 @@ module HttpHandler =
     let private enrichWithCorsOrigin (response : HttpResponseMessage) =
         response.Headers.Add("Access-Control-Allow-Origin", "*"); response
 
-    let private errorResponse context =
-        context.Request.CreateErrorResponse(
-            HttpStatusCode.InternalServerError, "HTTP handler did not yield a response")
-
-    let handleWith handleError (handle : HttpHandler) context =
-        async {
-            try
+    /// Handle HTTP OPTIONS request by setting all CORS headers.
+    /// 
+    /// When HTTP request method is not OPTIONS, enrich response with CORS origin.
+    let cors : HttpHandler =
+        fun next context ->
+            async {
                 match handleOptionsRequest context.Request with
-                | Some response -> return response
+                | Some response -> return context.WithResponse response
                 | None -> 
-                    let! handlerResponse = handle context
-                    match handlerResponse with
-                    | Some response -> return enrichWithCorsOrigin response
-                    | None -> return errorResponse context
-            with
-            | ex -> return handleError context ex
-        }
+                    let! context = next context
+                    return context |> Option.map (fun context -> { context with Response = context.Response |> Option.map enrichWithCorsOrigin })
+            }
 
-    let handle =
-        let handleError context (ex : exn) =
-            context.Logger.LogError(ex.Message)
-            context.Request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
-
-        handleWith handleError
+    /// Set HTTP function context's claims principal.
+    let security (getClaimsPrincipal : GetClaimsPrincipal) : HttpHandler =
+        fun next context ->
+            async {
+                let! claimsPrincipal = getClaimsPrincipal context.Logger context.Request
+                return! next { context with ClaimsPrincipal = claimsPrincipal }
+            }
         
