@@ -33,14 +33,14 @@ module Program =
             fun context ->
                 context.Logger.LogInformation("Handling HelloWorld request...")
                 context.Request.CreateResponse(HttpStatusCode.OK, "Hello World!")
-                |> context.ToFuncResult |> Async.singleton)
+                |> context.WithResponse |> Async.singleton)
 
     let helloLazHandler : HttpHandler =
         handleContext (
             fun context -> 
                 context.Logger.LogInformation("Handling HelloLaz request...")
                 context.Request.CreateResponse(HttpStatusCode.OK, "Hello Laz!")
-                |> context.ToFuncResult |> Async.singleton)
+                |> context.WithResponse |> Async.singleton)
 
     let currentUserHandler : HttpHandler =
         handleContext (
@@ -55,7 +55,7 @@ module Program =
 
                     let result = 
                         context.Request.CreateResponse(HttpStatusCode.OK, sprintf "The current user is: %s" user)
-                        |> context.ToFuncResult
+                        |> context.WithResponse
 
                     return result
                 })
@@ -74,7 +74,7 @@ module Program =
                 let data = {| QueryStringValue = queryStringValue; HeaderValue = headerValue |}
 
                 context.Request.CreateResponse(HttpStatusCode.OK, data)
-                |> context.ToFuncResult |> Async.singleton)
+                |> context.WithResponse |> Async.singleton)
 
     [<FunctionName("HelloWorld")>]
     let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequestMessage) (logger : ILogger) =                                           

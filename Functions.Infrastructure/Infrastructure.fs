@@ -13,13 +13,13 @@ type HttpFunctionContext = {
     Request : HttpRequestMessage
     Response : HttpResponseMessage option
     ClaimsPrincipal : ClaimsPrincipal option }
-    with member this.ToFuncResult response = Some { this with Response = Some response }
+    with member this.WithResponse response = Some { this with Response = Some response }
 
-type HttpFuncResult = Async<HttpFunctionContext option>
+type HttpFunctionResult = Async<HttpFunctionContext option>
 
-type HttpFunc = HttpFunctionContext -> HttpFuncResult
+type HttpFunction = HttpFunctionContext -> HttpFunctionResult
 
-type HttpHandler = HttpFunc -> HttpFunc
+type HttpHandler = HttpFunction -> HttpFunction
 
 type ErrorHandler = ILogger -> HttpRequestMessage -> exn -> HttpResponseMessage
 
@@ -37,19 +37,19 @@ module Core =
             logger.LogError(ex, ex.Message)
             request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex)
 
-    let handleContext (contextMap : HttpFunctionContext -> HttpFuncResult) : HttpHandler =
-        fun (next : HttpFunc) (context : HttpFunctionContext) ->
+    let handleContext (contextMap : HttpFunctionContext -> HttpFunctionResult) : HttpHandler =
+        fun (next : HttpFunction) (context : HttpFunctionContext) ->
             async {
                 match! contextMap context with
-                | Some c ->
-                    match c.Response with
-                    | Some _ -> return Some c
-                    | None -> return! next c
+                | Some context ->
+                    match context.Response with
+                    | Some _ -> return Some context
+                    | None -> return! next context
                 | None -> return  None
             }
 
     let compose (handler1 : HttpHandler) (handler2 : HttpHandler) : HttpHandler =
-        fun (final : HttpFunc) ->
+        fun (final : HttpFunction) ->
             let func = final |> handler2 |> handler1
             fun (context : HttpFunctionContext) ->
                 match context.Response with
@@ -63,7 +63,7 @@ module Core =
         async {
             let context = bootstrapContext logger request
             try
-                let func : HttpFunc = handler (Some >> Async.singleton)                
+                let func : HttpFunction = handler (Some >> Async.singleton)                
                 let! result = func context
                 match result with
                 | None -> return failwith "HTTP function context not available"
@@ -98,12 +98,12 @@ module HttpHandlers =
 
     /// Handle HTTP OPTIONS request by setting all CORS headers.
     /// 
-    /// When HTTP request is not OPTIONS, enrich response with CORS origin.
+    /// When HTTP request method is not OPTIONS, enrich response with CORS origin.
     let cors : HttpHandler =
         fun next context ->
             async {
                 match handleOptionsRequest context.Request with
-                | Some response -> return context.ToFuncResult response
+                | Some response -> return context.WithResponse response
                 | None -> 
                     let! context = next context
                     return context |> Option.map (fun context -> { context with Response = context.Response |> Option.map enrichWithCorsOrigin })
