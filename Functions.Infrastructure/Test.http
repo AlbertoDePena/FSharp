@@ -2,16 +2,10 @@
 OPTIONS http://localhost:7071/api/HelloWorld
 
 ###
-OPTIONS http://localhost:7071/api/HelloLaz
-
-###
 OPTIONS http://localhost:7071/api/CurrentUser
 
 ###
 GET http://localhost:7071/api/HelloWorld
-
-###
-GET http://localhost:7071/api/HelloLaz
 
 ###
 GET http://localhost:7071/api/CurrentUser

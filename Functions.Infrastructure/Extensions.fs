@@ -1,7 +1,7 @@
 namespace FSharp.Functions.Infrastructure
 
 open System
-open System.Net.Http
+open Microsoft.AspNetCore.Http
 
 [<RequireQualifiedAccess>]
 module Async =
@@ -15,8 +15,9 @@ module Async =
 [<AutoOpen>]
 module Extensions =
 
-    type HttpRequestMessage with
+    type HttpRequest with
 
+        /// Try to get the Bearer token from the Authorization header
         member this.TryGetBearerToken () =
             this.Headers 
             |> Seq.tryFind (fun q -> q.Key = "Authorization")
@@ -24,13 +25,13 @@ module Extensions =
             |> Option.map (fun h -> h.Substring("Bearer ".Length).Trim())
 
         member this.TryGetQueryStringValue (name : string) =
-            let value = this.RequestUri.ParseQueryString().Get(name)
-            if String.IsNullOrWhiteSpace(value)
-            then None
-            else Some value
+            let hasValue, values = this.Query.TryGetValue(name)
+            if hasValue
+            then values |> Seq.tryHead
+            else None
 
         member this.TryGetHeaderValue (name : string) =
-            let hasHeader, values = this.Headers.TryGetValues(name)
+            let hasHeader, values = this.Headers.TryGetValue(name)
             if hasHeader
             then values |> Seq.tryHead
             else None
