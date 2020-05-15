@@ -61,20 +61,23 @@ module Program =
 
             let data = {| QueryStringValue = queryStringValue; HeaderValue = headerValue |}
 
-            OkObjectResult(data) :> IActionResult
+            OkObjectResult(data) 
+            :> IActionResult
             |> Async.singleton 
 
     [<FunctionName("HelloWorld")>]
     let helloWorld ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequest) (logger : ILogger) =                                           
-        handle helloWorldHandler logger request
+        handleHttpRequest helloWorldHandler logger request
         |> Async.StartAsTask 
 
     [<FunctionName("CurrentUser")>]
     let currentUser ([<HttpTrigger(AuthorizationLevel.Anonymous, "get", "options")>] request : HttpRequest) (logger : ILogger) =         
-        handleWith errorHandler currentUserHandler logger request
+        handleHttpRequestWith errorHandler currentUserHandler logger request
         |> Async.StartAsTask 
 
     [<FunctionName("TestRequestExtensions")>]
     let testRequestExtensions ([<HttpTrigger(AuthorizationLevel.Anonymous, "get")>] request : HttpRequest) (logger : ILogger) =        
-        handle testRequestExtensionsHandler logger request
+        handleHttpRequest testRequestExtensionsHandler logger request
         |> Async.StartAsTask   
+
+    

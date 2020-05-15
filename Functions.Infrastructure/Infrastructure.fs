@@ -10,18 +10,48 @@ type HttpHandler = ILogger -> HttpRequest -> Async<IActionResult>
 
 type ErrorHandler = ILogger -> exn -> IActionResult
 
+[<RequireQualifiedAccess>]
+module Async =
+    
+    let bind f x = async.Bind(x, f)
+
+    let singleton x = async.Return x
+
+    let map f x = x |> bind (f >> singleton)
+
 [<AutoOpen>]
 module Core =
 
-    let private defaultErrorHandler : ErrorHandler =
+    type HttpRequest with
+
+        /// Try to get the Bearer token from the Authorization header
+        member this.TryGetBearerToken () =
+            this.Headers 
+            |> Seq.tryFind (fun q -> q.Key = "Authorization")
+            |> Option.map (fun q -> if Seq.isEmpty q.Value then String.Empty else q.Value |> Seq.head)
+            |> Option.map (fun h -> h.Substring("Bearer ".Length).Trim())
+
+        member this.TryGetQueryStringValue (name : string) =
+            let hasValue, values = this.Query.TryGetValue(name)
+            if hasValue
+            then values |> Seq.tryHead
+            else None
+
+        member this.TryGetHeaderValue (name : string) =
+            let hasHeader, values = this.Headers.TryGetValue(name)
+            if hasHeader
+            then values |> Seq.tryHead
+            else None
+
+    let private errorHandler : ErrorHandler =
         fun logger ex ->
             logger.LogError(ex, ex.Message)
             InternalServerErrorResult() :> IActionResult
     
     /// Handle HTTP request with a custom error handler.
-    let handleWith (errorHandler : ErrorHandler) (httpHandler : HttpHandler) (logger : ILogger) (request : HttpRequest) =
+    let handleHttpRequestWith (errorHandler : ErrorHandler) (httpHandler : HttpHandler) (logger : ILogger) (request : HttpRequest) =
 
-        let handleChoice choice =
+        let toActionResult choice =
             match choice with
             | Choice1Of2 actionResult -> actionResult
             | Choice2Of2 error -> errorHandler logger error
@@ -33,9 +63,9 @@ module Core =
         else
             httpHandler logger request
             |> Async.Catch
-            |> Async.map handleChoice
+            |> Async.map toActionResult
 
     /// Handle HTTP request.
-    let handle httpHandler =
-        handleWith defaultErrorHandler httpHandler
+    let handleHttpRequest httpHandler =
+        handleHttpRequestWith errorHandler httpHandler
         
