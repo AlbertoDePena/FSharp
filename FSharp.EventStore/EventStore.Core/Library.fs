@@ -14,7 +14,7 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName
+                let streamName = NonEmptyString.value streamName |> StreamName
 
                 let! stream = 
                     repository.GetStream connection streamName
@@ -38,8 +38,8 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName
-                let startAtVersion = NonNegativeInt.value startAtVersion
+                let streamName = NonEmptyString.value streamName |> StreamName
+                let startAtVersion = NonNegativeInt.value startAtVersion |> Version
 
                 let! events =
                     repository.GetEvents connection streamName startAtVersion
@@ -52,7 +52,7 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName
+                let streamName = NonEmptyString.value streamName |> StreamName
 
                 let! snapshots =
                     repository.GetSnapshots connection streamName
@@ -65,7 +65,7 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName
+                let streamName = NonEmptyString.value streamName |> StreamName
 
                 do! repository.DeleteSnapshots connection streamName
             }
@@ -75,8 +75,10 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
+                let streamName = NonEmptyString.value model.StreamName |> StreamName
+
                 let! streamOption = 
-                    repository.GetStream connection (NonEmptyString.value model.StreamName)
+                    repository.GetStream connection streamName
 
                 let stream =
                     streamOption |> Option.defaultWith (fun _ -> raise (RecordNotFoundException("Stream not found")))
@@ -89,7 +91,7 @@ module Service =
                     Data = NonEmptyString.value model.Data
                     CreatedAt = DateTimeOffset.UtcNow }
 
-                do! Repository.addSnapshot connection snapshot
+                do! Repository.addSnapshot connection snapshot |> Async.Ignore
             }
 
     let appendEvents : EventStore.Core.AppendEvents =
@@ -97,8 +99,10 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
+                let streamName = NonEmptyString.value model.StreamName |> StreamName
+
                 let! streamOption = 
-                    repository.GetStream connection (NonEmptyString.value model.StreamName)
+                    repository.GetStream connection streamName
 
                 use transaction = connection.BeginTransaction()
 
@@ -115,7 +119,7 @@ module Service =
                                     CreatedAt = DateTimeOffset.UtcNow
                                     UpdatedAt = DateTimeOffset.UtcNow |> Nullable }
                                 
-                                let! streamId = repository.AddStream connection transaction stream
+                                let! (UniqueId streamId) = repository.AddStream connection transaction stream
 
                                 return { stream with StreamId = streamId }
                         }
@@ -139,7 +143,9 @@ module Service =
                     let events = model.Events |> List.mapi toEvent
                     let newVersion = events |> List.map (fun x -> x.Version) |> List.max
 
-                    do! repository.AddEvents connection transaction events
+                    for event in events do
+                        do! repository.AddEvent connection transaction event |> Async.Ignore
+
                     do! repository.UpdateStream connection transaction { stream with Version = newVersion }
 
                     transaction.Commit()
@@ -167,6 +173,6 @@ module CompositionRoot =
         DeleteSnapshots = Repository.deleteSnapshots
         AddSnapshot = Repository.addSnapshot
         AddStream = Repository.addStream
-        AddEvents = Repository.addEvents
+        AddEvent = Repository.addEvent
         UpdateStream = Repository.updateStream
     }

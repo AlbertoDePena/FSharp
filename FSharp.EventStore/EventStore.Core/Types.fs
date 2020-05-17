@@ -16,9 +16,9 @@ type ModelValidationException(message : string) =
 type CorruptedDataException(message : string) =
     inherit Exception(message)
 
-type CreatedAtDate = DateTimeOffset
+type CreatedAtDate = CreatedAtDate of DateTimeOffset
 
-type UpdatedAtDate = DateTimeOffset
+type UpdatedAtDate = UpdatedAtDate of DateTimeOffset
 
 type StreamName = NonEmptyString
 
@@ -73,7 +73,7 @@ type Repository = {
     AddSnapshot : EventStore.Data.AddSnapshot
     AddStream : EventStore.Data.AddStream
     UpdateStream : EventStore.Data.UpdateStream
-    AddEvents : EventStore.Data.AddEvents }
+    AddEvent : EventStore.Data.AddEvent }
 
 type GetDbConnection = DbConnectionString -> Async<IDbConnection>
 
@@ -124,10 +124,12 @@ module StreamModel =
             entity.Name
             |> NonEmptyString.createOptional
             |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = entity.CreatedAt
+        CreatedAt = 
+            CreatedAtDate entity.CreatedAt
         UpdatedAt = 
-            entity.UpdatedAt
-            |> Option.ofNullable }
+            entity.UpdatedAt            
+            |> Option.ofNullable
+            |> Option.map UpdatedAtDate }
 
 [<RequireQualifiedAccess>]
 module SnapshotModel =
@@ -156,7 +158,8 @@ module SnapshotModel =
             entity.Description
             |> NonEmptyString.createOptional
             |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = entity.CreatedAt }
+        CreatedAt = 
+            CreatedAtDate entity.CreatedAt }
 
     //let toEntity (model : SnapshotModel) : EventStore.Data.
 
@@ -187,5 +190,6 @@ module EventModel =
             entity.Type
             |> NonEmptyString.createOptional
             |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = entity.CreatedAt }
+        CreatedAt = 
+            CreatedAtDate entity.CreatedAt }
         

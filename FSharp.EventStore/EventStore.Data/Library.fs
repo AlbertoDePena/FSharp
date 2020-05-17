@@ -2,6 +2,7 @@
 
 open System
 open System.Data
+open System.Data.SqlClient
 open Dapper
 open EventStore.Common
 
@@ -11,19 +12,13 @@ module Repository =
     let private storedProcedure = Nullable CommandType.StoredProcedure
 
     let private tryOrThrowDatabaseError task =
-        
-        let handleChoice choice =
-            match choice with
-            | Choice1Of2 data -> data
-            | Choice2Of2 (error : exn) -> raise (DatabaseException(error.Message, error))
-
-        task
-        |> Async.AwaitTask
-        |> Async.Catch
-        |> Async.map handleChoice
+        try
+            task |> Async.AwaitTask
+        with
+        | :? SqlException as ex -> raise (DatabaseException(ex.Message, ex))
 
     let getStream : GetStream =
-        fun connection streamName ->
+        fun connection (StreamName streamName) ->
             
             let toOption (stream : Stream) =
                 if isNull (box stream)
@@ -43,15 +38,15 @@ module Repository =
             |> Async.map Seq.toList
 
     let getEvents : GetEvents =
-        fun connection streamName startAtVersion ->
-            let param = {| StreamName = streamName; StartAtVersion = startAtVersion |}
+        fun connection (StreamName streamName) (Version version) ->
+            let param = {| StreamName = streamName; StartAtVersion = version |}
 
             connection.QueryAsync<Event>("dbo.GetEvents", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
             |> Async.map Seq.toList
 
     let getSnapshots : GetSnapshots =
-        fun connection streamName ->
+        fun connection (StreamName streamName) ->
             let param = {| StreamName = streamName |}
 
             connection.QueryAsync<Snapshot>("dbo.GetSnapshots", param, commandType = storedProcedure)
@@ -64,25 +59,26 @@ module Repository =
 
             connection.ExecuteScalarAsync<int64>("dbo.AddStream", param, transaction, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
+            |> Async.map UniqueId
 
-    let addEvents : AddEvents =
-        fun connection transaction events ->
-            let param = events |> List.map (fun x -> {| StreamId = x.StreamId; Type = x.Type; Data = x.Data; Version = x.Version  |})
+    let addEvent : AddEvent =
+        fun connection transaction event ->
+            let param = {| StreamId = event.StreamId; Type = event.Type; Data = event.Data; Version = event.Version  |}
 
-            connection.ExecuteAsync("dbo.AddEvent", param, transaction, commandType = storedProcedure)
+            connection.ExecuteScalarAsync<int64>("dbo.AddEvent", param, transaction, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
-            |> Async.Ignore
+            |> Async.map UniqueId
 
     let addSnapshot : AddSnapshot =
         fun connection snapshot ->
             let param = {| StreamId = snapshot.StreamId; Description = snapshot.Description; Data = snapshot.Data; Version = snapshot.Version |}
 
-            connection.ExecuteAsync("dbo.AddSnapshot", param, commandType = storedProcedure)
+            connection.ExecuteScalarAsync<int64>("dbo.AddSnapshot", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
-            |> Async.Ignore
+            |> Async.map UniqueId
 
     let deleteSnapshots : DeleteSnapshots =
-        fun connection streamName ->
+        fun connection (StreamName streamName) ->
             let param = {| StreamName = streamName |}
 
             connection.ExecuteAsync("dbo.DeleteSnapshots", param, commandType = storedProcedure)

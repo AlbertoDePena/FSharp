@@ -2,10 +2,6 @@
 
 open System
 
-type StreamName = string
-
-type StartAtVersion = int32
-
 type NonEmptyString = private NonEmptyString of string
 
 type NonNegativeInt = private NonNegativeInt of int32
