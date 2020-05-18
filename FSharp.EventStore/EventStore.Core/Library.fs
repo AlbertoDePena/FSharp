@@ -14,12 +14,10 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName |> StreamName
-
                 let! stream = 
                     repository.GetStream connection streamName
 
-                return stream |> Option.map StreamModel.fromEntity
+                return stream |> Option.map Mapper.toStream
             }
 
     let getAllStreams : EventStore.Core.GetAllStreams =
@@ -30,7 +28,7 @@ module Service =
                 let! streams =
                     repository.GetAllStreams connection
 
-                return streams |> List.map StreamModel.fromEntity
+                return streams |> List.map Mapper.toStream
             }
 
     let getEvents : EventStore.Core.GetEvents =
@@ -38,13 +36,10 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName |> StreamName
-                let startAtVersion = NonNegativeInt.value startAtVersion |> Version
-
                 let! events =
                     repository.GetEvents connection streamName startAtVersion
 
-                return events |> List.map EventModel.fromEntity
+                return events |> List.map Mapper.toEvent
             }
 
     let getSnapshots : EventStore.Core.GetSnapshots =
@@ -52,20 +47,16 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value streamName |> StreamName
-
                 let! snapshots =
                     repository.GetSnapshots connection streamName
 
-                return snapshots |> List.map SnapshotModel.fromEntity
+                return snapshots |> List.map Mapper.toSnapshot
             }
 
     let deleteSnapshots : EventStore.Core.DeleteSnapshots =
         fun getDbConnection dbConnectionString repository streamName ->
             async {
                 use! connection = getDbConnection dbConnectionString
-
-                let streamName = NonEmptyString.value streamName |> StreamName
 
                 do! repository.DeleteSnapshots connection streamName
             }
@@ -75,7 +66,7 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value model.StreamName |> StreamName
+                let streamName = StreamName model.StreamName
 
                 let! streamOption = 
                     repository.GetStream connection streamName
@@ -83,12 +74,12 @@ module Service =
                 let stream =
                     streamOption |> Option.defaultWith (fun _ -> raise (RecordNotFoundException("Stream not found")))
 
-                let snapshot = {
+                let snapshot : Entities.Snapshot = {
                     StreamId = stream.StreamId
                     Version = stream.Version
                     SnapshotId = 0L
-                    Description = NonEmptyString.value model.Description
-                    Data = NonEmptyString.value model.Data
+                    Description = model.Description
+                    Data = model.Data
                     CreatedAt = DateTimeOffset.UtcNow }
 
                 do! Repository.addSnapshot connection snapshot |> Async.Ignore
@@ -99,7 +90,7 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                let streamName = NonEmptyString.value model.StreamName |> StreamName
+                let streamName = StreamName model.StreamName
 
                 let! streamOption = 
                     repository.GetStream connection streamName
@@ -112,9 +103,9 @@ module Service =
                             match streamOption with
                             | Some stream -> return stream
                             | None ->
-                                let stream = {
+                                let stream : Entities.Stream = {
                                     StreamId = 0L
-                                    Name = NonEmptyString.value model.StreamName
+                                    Name = model.StreamName
                                     Version = 0
                                     CreatedAt = DateTimeOffset.UtcNow
                                     UpdatedAt = DateTimeOffset.UtcNow |> Nullable }
@@ -126,17 +117,15 @@ module Service =
 
                     let! stream = getStream ()
 
-                    let expectedVersion = NonNegativeInt.value model.ExpectedVersion
-
-                    if stream.Version <> expectedVersion then
-                        let message = sprintf "Concurrency error - expected stream version to be %i but got %i" stream.Version expectedVersion
+                    if stream.Version <> model.ExpectedVersion then
+                        let message = sprintf "Concurrency error - expected stream version to be %i but got %i" stream.Version model.ExpectedVersion
                         raise (ConcurrencyException(message))
 
-                    let toEvent index (event : NewEventModel) = {
+                    let toEvent index (event : Models.NewEvent) : Entities.Event = {
                         EventId = 0L
                         StreamId = stream.StreamId
-                        Type = NonEmptyString.value event.Type
-                        Data = NonEmptyString.value event.Data
+                        Type = event.Type
+                        Data = event.Data
                         CreatedAt = DateTimeOffset.UtcNow
                         Version = stream.Version + index + 1 }
 
@@ -159,8 +148,8 @@ module Service =
 [<RequireQualifiedAccess>]
 module CompositionRoot =
 
-    let getDbConnection dbConnectionString =
-        let connection = new SqlConnection(NonEmptyString.value dbConnectionString)
+    let getDbConnection (DbConnectionString dbConnectionString) =
+        let connection = new SqlConnection(dbConnectionString)
         connection.OpenAsync()
         |> Async.AwaitTask
         |> Async.map (fun _ -> connection :> IDbConnection)

@@ -8,6 +8,26 @@ open EventStore.Common
 
 [<RequireQualifiedAccess>]
 module Repository =
+
+    let required propertyName value = 
+        if String.IsNullOrWhiteSpace(value)
+        then raise (EntityValidationException(sprintf "%s is required"  propertyName))
+        else value
+
+    let withMaxLength propertyName length (value : string) =
+        if value.Length > length
+        then raise(EntityValidationException(sprintf "%s cannot be longer than %i" propertyName length))
+        else value
+
+    let toNonNegativeInt value =
+        if value < 0
+        then 0
+        else value
+
+    let toNonNegativeLong value =
+        if value < 0L
+        then 0L
+        else value
     
     let private storedProcedure = Nullable CommandType.StoredProcedure
 
@@ -20,42 +40,46 @@ module Repository =
     let getStream : GetStream =
         fun connection (StreamName streamName) ->
             
-            let toOption (stream : Stream) =
+            let toOption (stream : Entities.Stream) =
                 if isNull (box stream)
                 then None
                 else Some stream
 
-            let param = {| StreamName = streamName |}
+            let param = {| StreamName = streamName |> required "Stream Name" |> withMaxLength "Stream Name" 256 |}
 
-            connection.QuerySingleOrDefaultAsync<Stream>("dbo.GetStream", param, commandType = storedProcedure)
+            connection.QuerySingleOrDefaultAsync<Entities.Stream>("dbo.GetStream", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
             |> Async.map toOption
 
     let getAllStreams : GetAllStreams =
         fun connection ->
-            connection.QueryAsync<Stream>("dbo.GetAllStreams", commandType = storedProcedure)
+            connection.QueryAsync<Entities.Stream>("dbo.GetAllStreams", commandType = storedProcedure)
             |> tryOrThrowDatabaseError
             |> Async.map Seq.toList
 
     let getEvents : GetEvents =
         fun connection (StreamName streamName) (Version version) ->
-            let param = {| StreamName = streamName; StartAtVersion = version |}
+            let param = {| 
+                StreamName = streamName |> required "Stream Name" |> withMaxLength "Stream Name" 256
+                StartAtVersion = version |> toNonNegativeInt |}
 
-            connection.QueryAsync<Event>("dbo.GetEvents", param, commandType = storedProcedure)
+            connection.QueryAsync<Entities.Event>("dbo.GetEvents", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
             |> Async.map Seq.toList
 
     let getSnapshots : GetSnapshots =
         fun connection (StreamName streamName) ->
-            let param = {| StreamName = streamName |}
+            let param = {| StreamName = streamName |> required "Stream Name" |> withMaxLength "Stream Name" 256 |}
 
-            connection.QueryAsync<Snapshot>("dbo.GetSnapshots", param, commandType = storedProcedure)
+            connection.QueryAsync<Entities.Snapshot>("dbo.GetSnapshots", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
             |> Async.map Seq.toList
 
     let addStream : AddStream =
         fun connection transaction stream ->
-            let param = {| Name = stream.Name; Version = stream.Version |}
+            let param = {| 
+                Name = stream.Name |> required "Stream Name" |> withMaxLength "Stream Name" 256
+                Version = stream.Version |> toNonNegativeInt |}
 
             connection.ExecuteScalarAsync<int64>("dbo.AddStream", param, transaction, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
@@ -63,7 +87,11 @@ module Repository =
 
     let addEvent : AddEvent =
         fun connection transaction event ->
-            let param = {| StreamId = event.StreamId; Type = event.Type; Data = event.Data; Version = event.Version  |}
+            let param = {| 
+                StreamId = event.StreamId |> toNonNegativeLong
+                Type = event.Type |> required "Event Type" |> withMaxLength "Event Type" 256
+                Data = event.Data |> required "Event Data"
+                Version = event.Version |> toNonNegativeInt |}
 
             connection.ExecuteScalarAsync<int64>("dbo.AddEvent", param, transaction, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
@@ -71,7 +99,11 @@ module Repository =
 
     let addSnapshot : AddSnapshot =
         fun connection snapshot ->
-            let param = {| StreamId = snapshot.StreamId; Description = snapshot.Description; Data = snapshot.Data; Version = snapshot.Version |}
+            let param = {| 
+                StreamId = snapshot.StreamId |> toNonNegativeLong
+                Description = snapshot.Description |> required "Snapshot Description" |> withMaxLength "Snapshot Description" 256
+                Data = snapshot.Data |> required "Snapshot Data"
+                Version = snapshot.Version |> toNonNegativeInt |}
 
             connection.ExecuteScalarAsync<int64>("dbo.AddSnapshot", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
@@ -79,7 +111,7 @@ module Repository =
 
     let deleteSnapshots : DeleteSnapshots =
         fun connection (StreamName streamName) ->
-            let param = {| StreamName = streamName |}
+            let param = {| StreamName = streamName |> required "Stream Name" |> withMaxLength "Stream Name" 256 |}
 
             connection.ExecuteAsync("dbo.DeleteSnapshots", param, commandType = storedProcedure)
             |> tryOrThrowDatabaseError
@@ -87,7 +119,9 @@ module Repository =
 
     let updateStream : UpdateStream =
         fun connection transaction stream ->
-            let param = {| StreamId = stream.StreamId; Version = stream.Version |}
+            let param = {| 
+                StreamId = stream.StreamId |> toNonNegativeLong
+                Version = stream.Version |> toNonNegativeInt |}
 
             connection.ExecuteAsync("dbo.UpdateStream", param, transaction, commandType = storedProcedure)
             |> tryOrThrowDatabaseError

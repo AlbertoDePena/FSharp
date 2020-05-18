@@ -2,7 +2,7 @@
 
 open System
 open System.Data
-open EventStore.Common
+open EventStore.Data
 
 type ConcurrencyException(message : string) =
     inherit Exception(message)
@@ -10,59 +10,47 @@ type ConcurrencyException(message : string) =
 type RecordNotFoundException(message : string) =
     inherit Exception(message)
 
-type ModelValidationException(message : string) =
-    inherit Exception(message)
+type DbConnectionString = DbConnectionString of string
 
-type CorruptedDataException(message : string) =
-    inherit Exception(message)
+[<RequireQualifiedAccess>]
+module Models =
 
-type CreatedAtDate = CreatedAtDate of DateTimeOffset
-
-type UpdatedAtDate = UpdatedAtDate of DateTimeOffset
-
-type StreamName = NonEmptyString
-
-type StartAtVersion = NonNegativeInt
-
-type DbConnectionString = NonEmptyString
-
-type StreamModel = {
-    StreamId : NonNegativeLong
-    Version : NonNegativeInt
-    Name : NonEmptyString
-    CreatedAt : CreatedAtDate
-    UpdatedAt : UpdatedAtDate option }
+    type Stream = {
+        StreamId : int64
+        Version : int32
+        Name : string
+        CreatedAt : DateTimeOffset
+        UpdatedAt : DateTimeOffset option }
     
-type EventModel = {
-    EventId : NonNegativeLong
-    StreamId : NonNegativeLong
-    Version : NonNegativeInt
-    Data : NonEmptyString
-    Type : NonEmptyString    
-    CreatedAt : CreatedAtDate }
+    type Event = {
+        EventId : int64
+        StreamId : int64
+        Version : int32
+        Data : string
+        Type : string    
+        CreatedAt : DateTimeOffset }
     
-type SnapshotModel = {
-    SnapshotId : NonNegativeLong
-    StreamId : NonNegativeLong
-    Version : NonNegativeInt
-    Data : NonEmptyString
-    Description : NonEmptyString    
-    CreatedAt : CreatedAtDate } 
+    type Snapshot = {
+        SnapshotId : int64
+        StreamId : int64
+        Version : int32
+        Data : string
+        Description : string    
+        CreatedAt : DateTimeOffset } 
 
-type NewEventModel = {
-    Data : NonEmptyString
-    Type : NonEmptyString }
+    type NewEvent = {
+        Data : string
+        Type : string }
 
-type AppendEventsModel = {
-    ExpectedVersion : NonNegativeInt
-    StreamName : NonEmptyString
-    Events : NewEventModel list
-}
+    type AppendEvents = {
+        ExpectedVersion : int32
+        StreamName : string
+        Events : NewEvent list }
 
-type AddSnapshotModel = {
-    StreamName : NonEmptyString
-    Description : NonEmptyString
-    Data : NonEmptyString }
+    type AddSnapshot = {
+        StreamName : string
+        Description : string
+        Data : string }
 
 type Repository = {
     GetAllStreams : EventStore.Data.GetAllStreams
@@ -79,11 +67,11 @@ type GetDbConnection = DbConnectionString -> Async<IDbConnection>
 
 type AppendEvents = 
     GetDbConnection -> DbConnectionString ->
-        Repository -> AppendEventsModel -> Async<unit>
+        Repository -> Models.AppendEvents -> Async<unit>
 
 type AddSnapshot = 
     GetDbConnection -> DbConnectionString -> 
-        Repository -> AddSnapshotModel -> Async<unit>
+        Repository -> Models.AddSnapshot -> Async<unit>
 
 type DeleteSnapshots = 
     GetDbConnection -> DbConnectionString ->
@@ -91,105 +79,42 @@ type DeleteSnapshots =
 
 type GetAllStreams = 
     GetDbConnection -> DbConnectionString ->
-        Repository -> Async<StreamModel list>
+        Repository -> Async<Models.Stream list>
 
 type GetSnapshots = 
     GetDbConnection -> DbConnectionString ->
-        Repository -> StreamName -> Async<SnapshotModel list>
+        Repository -> StreamName -> Async<Models.Snapshot list>
 
 type GetEvents = 
     GetDbConnection -> DbConnectionString ->
-        Repository -> StreamName -> StartAtVersion -> Async<EventModel list>
+        Repository -> StreamName -> Version -> Async<Models.Event list>
 
 type GetStream = 
     GetDbConnection -> DbConnectionString ->
-        Repository -> StreamName -> Async<StreamModel option>
+        Repository -> StreamName -> Async<Models.Stream option>
 
 [<RequireQualifiedAccess>]
-module StreamModel =
+module Mapper =
     
-    let private throwCorruptedDataError () = 
-        raise (CorruptedDataException("Stream data is corrupted"))
+    let toStream (entity : EventStore.Data.Entities.Stream) : Models.Stream = {
+        StreamId = entity.StreamId
+        Version = entity.Version
+        Name = entity.Name
+        CreatedAt = entity.CreatedAt
+        UpdatedAt = entity.UpdatedAt |> Option.ofNullable }
 
-    let fromEntity (entity : EventStore.Data.Stream) : StreamModel = {
-        StreamId = 
-            entity.StreamId 
-            |> NonNegativeLong.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Version =
-            entity.Version
-            |> NonNegativeInt.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Name =
-            entity.Name
-            |> NonEmptyString.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = 
-            CreatedAtDate entity.CreatedAt
-        UpdatedAt = 
-            entity.UpdatedAt            
-            |> Option.ofNullable
-            |> Option.map UpdatedAtDate }
+    let toSnapshot (entity : EventStore.Data.Entities.Snapshot) : Models.Snapshot = {
+        SnapshotId = entity.SnapshotId
+        StreamId = entity.StreamId 
+        Version = entity.Version
+        Data = entity.Data
+        Description = entity.Description
+        CreatedAt = entity.CreatedAt }
 
-[<RequireQualifiedAccess>]
-module SnapshotModel =
-    
-    let private throwCorruptedDataError () = 
-        raise (CorruptedDataException("Snapshot data is corrupted"))
-
-    let fromEntity (entity : EventStore.Data.Snapshot) : SnapshotModel = {
-        SnapshotId = 
-            entity.SnapshotId 
-            |> NonNegativeLong.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        StreamId = 
-            entity.StreamId 
-            |> NonNegativeLong.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Version =
-            entity.Version
-            |> NonNegativeInt.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Data =
-            entity.Data
-            |> NonEmptyString.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Description =
-            entity.Description
-            |> NonEmptyString.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = 
-            CreatedAtDate entity.CreatedAt }
-
-    //let toEntity (model : SnapshotModel) : EventStore.Data.
-
-[<RequireQualifiedAccess>]
-module EventModel =
-    
-    let private throwCorruptedDataError () = 
-        raise (CorruptedDataException("Event data is corrupted"))
-
-    let fromEntity (entity : EventStore.Data.Event) : EventModel = {
-        EventId = 
-            entity.EventId 
-            |> NonNegativeLong.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        StreamId = 
-            entity.StreamId 
-            |> NonNegativeLong.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Version =
-            entity.Version
-            |> NonNegativeInt.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Data =
-            entity.Data
-            |> NonEmptyString.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        Type =
-            entity.Type
-            |> NonEmptyString.createOptional
-            |> Option.defaultWith throwCorruptedDataError
-        CreatedAt = 
-            CreatedAtDate entity.CreatedAt }
-        
+    let toEvent (entity : EventStore.Data.Entities.Event) : Models.Event = {
+        EventId = entity.EventId 
+        StreamId = entity.StreamId 
+        Version = entity.Version
+        Data = entity.Data
+        Type = entity.Type
+        CreatedAt = entity.CreatedAt }
