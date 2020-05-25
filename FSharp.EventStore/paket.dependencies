@@ -1,0 +1,6 @@
+source https://www.nuget.org/api/v2
+
+nuget Dapper 2.0.35
+nuget dbup-sqlserver 4.3.1
+nuget FSharp.Core 4.7.1
+nuget System.Data.SqlClient 4.8.1

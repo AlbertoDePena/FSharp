@@ -1,14 +1,12 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <Content Include="Properties\launchSettings.json" />
   </ItemGroup>
-
   <ItemGroup>
     <EmbeddedResource Include="SqlScripts\1-Initial.sql" />
     <EmbeddedResource Include="StoredProcedures\AddEvent.sql" />
@@ -21,19 +19,12 @@
     <EmbeddedResource Include="StoredProcedures\GetStream.sql" />
     <EmbeddedResource Include="StoredProcedures\UpdateStream.sql" />
   </ItemGroup>
-
   <ItemGroup>
     <Compile Include="Program.fs" />
   </ItemGroup>
-
   <ItemGroup>
     <None Include="Dockerfile" />
     <None Include="README.md" />
   </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="dbup-sqlserver" Version="4.3.1" />
-    <PackageReference Include="FSharp.Core" Version="4.7.1" />
-  </ItemGroup>
-
+  <Import Project="..\.paket\Paket.Restore.targets" />
 </Project>
