@@ -15,7 +15,9 @@ module Service =
                 use! connection = getDbConnection dbConnectionString
 
                 let! stream = 
-                    repository.GetStream connection streamName
+                    streamName
+                    |> Validation.validateStreamName
+                    |> repository.GetStream connection
 
                 return stream |> Option.map Mapper.toStream
             }
@@ -34,6 +36,8 @@ module Service =
     let getEvents : EventStore.Core.GetEvents =
         fun getDbConnection dbConnectionString repository streamName startAtVersion ->
             async {
+                let streamName = streamName |>  Validation.validateStreamName 
+                
                 use! connection = getDbConnection dbConnectionString
 
                 let! events =
@@ -48,7 +52,9 @@ module Service =
                 use! connection = getDbConnection dbConnectionString
 
                 let! snapshots =
-                    repository.GetSnapshots connection streamName
+                    streamName
+                    |> Validation.validateStreamName
+                    |> repository.GetSnapshots connection
 
                 return snapshots |> List.map Mapper.toSnapshot
             }
@@ -58,12 +64,14 @@ module Service =
             async {
                 use! connection = getDbConnection dbConnectionString
 
-                do! repository.DeleteSnapshots connection streamName
+                do! streamName |> Validation.validateStreamName |> repository.DeleteSnapshots connection
             }
 
     let addSnapshot : EventStore.Core.AddSnapshot =
         fun getDbConnection dbConnectionString repository model ->
             async {
+                let model = model |> Validation.validateAddSnapshot
+
                 use! connection = getDbConnection dbConnectionString
 
                 let streamName = StreamName model.StreamName
@@ -88,6 +96,8 @@ module Service =
     let appendEvents : EventStore.Core.AppendEvents =
         fun getDbConnection dbConnectionString repository model ->
             async {
+                let model = model |> Validation.validateAppendEvents
+
                 use! connection = getDbConnection dbConnectionString
 
                 let streamName = StreamName model.StreamName

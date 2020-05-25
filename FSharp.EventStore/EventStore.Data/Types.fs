@@ -6,9 +6,6 @@ open System.Data
 type DatabaseException(message : string, ex : Exception) =
     inherit Exception(message, ex)
 
-type EntityValidationException(message : string) =
-    inherit Exception(message)
-
 [<RequireQualifiedAccess>]
 module Entities =
 

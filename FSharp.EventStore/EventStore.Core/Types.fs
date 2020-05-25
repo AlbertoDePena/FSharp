@@ -10,6 +10,9 @@ type ConcurrencyException(message : string) =
 type RecordNotFoundException(message : string) =
     inherit Exception(message)
 
+type EntityValidationException(message : string) =
+    inherit Exception(message)
+
 type DbConnectionString = DbConnectionString of string
 
 [<RequireQualifiedAccess>]
@@ -96,14 +99,14 @@ type GetStream =
 [<RequireQualifiedAccess>]
 module Mapper =
     
-    let toStream (entity : EventStore.Data.Entities.Stream) : Models.Stream = {
+    let toStream (entity : Entities.Stream) : Models.Stream = {
         StreamId = entity.StreamId
         Version = entity.Version
         Name = entity.Name
         CreatedAt = entity.CreatedAt
         UpdatedAt = entity.UpdatedAt |> Option.ofNullable }
 
-    let toSnapshot (entity : EventStore.Data.Entities.Snapshot) : Models.Snapshot = {
+    let toSnapshot (entity : Entities.Snapshot) : Models.Snapshot = {
         SnapshotId = entity.SnapshotId
         StreamId = entity.StreamId 
         Version = entity.Version
@@ -111,10 +114,46 @@ module Mapper =
         Description = entity.Description
         CreatedAt = entity.CreatedAt }
 
-    let toEvent (entity : EventStore.Data.Entities.Event) : Models.Event = {
+    let toEvent (entity : Entities.Event) : Models.Event = {
         EventId = entity.EventId 
         StreamId = entity.StreamId 
         Version = entity.Version
         Data = entity.Data
         Type = entity.Type
         CreatedAt = entity.CreatedAt }
+
+[<RequireQualifiedAccess>]
+module Validation =
+
+    let private required propertyName value = 
+        if String.IsNullOrWhiteSpace(value)
+        then raise (EntityValidationException(sprintf "%s is required"  propertyName))
+        else value
+
+    let private withMaxLength propertyName length (value : string) =
+        if value.Length > length
+        then raise(EntityValidationException(sprintf "%s cannot be longer than %i" propertyName length))
+        else value
+
+    let private validateWithMaxLength propertyName length =
+        required propertyName >> withMaxLength propertyName length
+
+    let private unwrapSteamName (StreamName streamName) = streamName
+
+    let validateStreamName (StreamName streamName) =
+        validateWithMaxLength "Stream Name" 256 streamName |> StreamName
+
+    let validateAddSnapshot (model : Models.AddSnapshot) : Models.AddSnapshot = {
+        Data = required "Snapshot Data" model.Data
+        Description = validateWithMaxLength "Snapshot Description" 256 model.Description
+        StreamName = validateStreamName (StreamName model.StreamName) |> unwrapSteamName }
+
+    let validateNewEvent (model : Models.NewEvent) : Models.NewEvent = {
+        Data = required "Event Data" model.Data
+        Type = validateWithMaxLength "Event Type" 256 model.Type }
+
+    let validateAppendEvents (model : Models.AppendEvents) : Models.AppendEvents = {
+        StreamName = validateStreamName (StreamName model.StreamName) |> unwrapSteamName
+        ExpectedVersion = model.ExpectedVersion
+        Events = model.Events |> List.map validateNewEvent
+    }
